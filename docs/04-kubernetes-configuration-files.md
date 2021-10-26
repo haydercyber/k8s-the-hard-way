@@ -219,7 +219,7 @@ done
 Copy the appropriate `kube-controller-manager` and `kube-scheduler` kubeconfig files to each controller instance:
 
 ```
-for instance in kubecon01.k8s.com kubecon01.k8s.com; do 
+for instance in kubecon01.k8s.com kubecon02.k8s.com; do 
     scp admin.kubeconfig kube-controller-manager.kubeconfig kube-scheduler.kubeconfig ${instance}:~/
 done
 ```

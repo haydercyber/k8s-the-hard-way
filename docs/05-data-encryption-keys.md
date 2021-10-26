@@ -41,7 +41,7 @@ EOF
 Copy the `encryption-config.yaml` encryption config file to each controller instance:
 
 ```
-for instance in kubecon01.k8s.com kubecon01.k8s.com; do
+for instance in kubecon01.k8s.com kubecon02.k8s.com; do
      scp encryption-config.yaml ${instance}:~/
 done
 ```

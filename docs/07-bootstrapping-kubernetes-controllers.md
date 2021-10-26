@@ -242,3 +242,239 @@ ok
 ```
 
 > Remember to run the above commands on each controller node: `kubecon01`, `kubecon02`
+
+## RBAC for Kubelet Authorization
+One of the necessary steps in setting up a new Kubernetes cluster from scratch is to assign permissions that allow the Kubernetes API to access various functionality within the worker kubelets. This lesson guides you through the process of creating a ClusterRole and binding it to the kubernetes user so that those permissions will be in place. After completing this lesson, your cluster will have the necessary role-based access control configuration to allow the cluster's API to access kubelet functionality such as logs and metrics. You can configure RBAC for kubelet authorization with these commands. Note that these commands only need to be run on one control node. Create a role with the necessary permissions
+
+In this section you will configure RBAC permissions to allow the Kubernetes API Server to access the Kubelet API on each worker node. Access to the Kubelet API is required for retrieving metrics, logs, and executing commands in pods.
+
+> This tutorial sets the Kubelet `--authorization-mode` flag to `Webhook`. Webhook mode uses the [SubjectAccessReview](https://kubernetes.io/docs/admin/authorization/#checking-api-access) API to determine authorization.
+
+The commands in this section will effect the entire cluster and only need to be run once from one of the controller nodes.
+
+Create the `system:kube-apiserver-to-kubelet` [ClusterRole](https://kubernetes.io/docs/admin/authorization/rbac/#role-and-clusterrole) with permissions to access the Kubelet API and perform most common tasks associated with managing pods:
+
+```
+cat <<EOF | kubectl apply --kubeconfig admin.kubeconfig -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+    rbac.authorization.kubernetes.io/autoupdate: "true"
+  labels:
+    kubernetes.io/bootstrapping: rbac-defaults
+  name: system:kube-apiserver-to-kubelet
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - nodes/proxy
+      - nodes/stats
+      - nodes/log
+      - nodes/spec
+      - nodes/metrics
+    verbs:
+      - "*"
+EOF
+```
+
+The Kubernetes API Server authenticates to the Kubelet as the `kubernetes` user using the client certificate as defined by the `--kubelet-client-certificate` flag.
+
+Bind the `system:kube-apiserver-to-kubelet` ClusterRole to the `kubernetes` user:
+
+```
+cat <<EOF | kubectl apply --kubeconfig admin.kubeconfig -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system:kube-apiserver
+  namespace: ""
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:kube-apiserver-to-kubelet
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: kubernetes
+EOF
+```
+
+
+### Setting up a Kube API Frontend Load Balancer
+In order to achieve redundancy for your Kubernetes cluster, you will need to load balance usage of the Kubernetes API across multiple control nodes. In this lesson, you will learn how to create a simple nginx server to perform this balancing. After completing this lesson, you will be able to interact with both control nodes of your kubernetes cluster using the nginx load balancer. Here are the commands you can use to set up the nginx load balancer. Run these on the server that you have designated as your load balancer server:  
+```
+# ssh root@192.168.0.3
+```
+Note will use stream module for nginx for easy wiil create a docker image that contain the all moudle config first lets install docker 
+
+```
+# yum install -y yum-utils
+# yum-config-manager \
+    --add-repo \
+    https://download.docker.com/linux/centos/docker-ce.repo
+# yum-config-manager --enable docker-ce-nightly
+# yum install docker-ce docker-ce-cli containerd.io -y  
+# systemctl enable --now docker
+```
+### Config the Loadbalancer 
+Now will create the dir for image to configure all image nassry 
+
+```
+# mkdir nginx && cd nginx 
+```
+Set up some environment variables for the lead balancer config file: 
+
+```
+# CONTROLLER0_IP=192.168.0.1
+# CONTROLLER1_IP=192.168.0.2
+```
+Create the load balancer nginx config file
+
+```
+# cat << EOF | sudo tee k8s.conf
+   stream {
+    upstream kubernetes {
+        least_conn;
+        server $CONTROLLER0_IP:6443;
+        server $CONTROLLER1_IP:6443;
+     }
+    server {
+        listen 6443;
+        listen 443;
+        proxy_pass kubernetes;
+    }
+}
+EOF
+```
+Lets create a nginx config 
+```
+# cat << EOF |  tee nginx.conf 
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+
+events {
+        worker_connections 768;
+        # multi_accept on;
+}
+
+http {
+
+        ##
+        # Basic Settings
+        ##
+
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 65;
+        types_hash_max_size 2048;
+        # server_tokens off;
+
+        # server_names_hash_bucket_size 64;
+        # server_name_in_redirect off;
+
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+
+        ##
+        # SSL Settings
+        ##
+
+        ssl_protocols TLSv1 TLSv1.1 TLSv1.2; # Dropping SSLv3, ref: POODLE
+        ssl_prefer_server_ciphers on;
+
+        ##
+        # Logging Settings
+        ##
+
+        access_log /var/log/nginx/access.log;
+        error_log /var/log/nginx/error.log;
+
+        ##
+        # Gzip Settings
+        ##
+
+        gzip on;
+        gzip_disable "msie6";
+
+        # gzip_vary on;
+        # gzip_proxied any;
+        # gzip_comp_level 6;
+        # gzip_buffers 16 8k;
+        # gzip_http_version 1.1;
+        # gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+        ##
+        # Virtual Host Configs
+        ##
+
+        include /etc/nginx/conf.d/*.conf;
+        include /etc/nginx/sites-enabled/*;
+}
+
+
+#mail {
+#       # See sample authentication script at:
+#       # http://wiki.nginx.org/ImapAuthenticateWithApachePhpScript
+#
+#       # auth_http localhost/auth.php;
+#       # pop3_capabilities "TOP" "USER";
+#       # imap_capabilities "IMAP4rev1" "UIDPLUS";
+#
+#       server {
+#               listen     localhost:110;
+#               protocol   pop3;
+#               proxy      on;
+#       }
+#
+#       server {
+#               listen     localhost:143;
+#               protocol   imap;
+#               proxy      on;
+#       }
+#}
+include /etc/nginx/tcpconf.d/*;
+EOF
+```
+Lets create a Dockerfile 
+
+```
+# cat << EOF |  tee Dockerfile
+FROM ubuntu:16.04
+RUN apt-get update -y && apt-get upgrade -y && apt-get install -y nginx && mkdir -p  /etc/nginx/tcpconf.d
+RUN rm -rf /etc/nginx/nginx.conf
+ADD nginx.conf /etc/nginx/
+ADD k8s.conf /etc/nginx/tcpconf.d/
+CMD ["nginx", "-g", "daemon off;"]
+EOF
+```
+Lets build and run docker 
+
+```
+# docker build -t nginx .
+# docker run -d --network host --name nginx --restart unless-stopped nginx
+```
+Make a HTTP request for the Kubernetes version info:
+
+```
+curl --cacert ca.pem https://${KUBERNETES_PUBLIC_ADDRESS}:6443/version
+```
+
+> output
+
+```
+{
+  "major": "1",
+  "minor": "21",
+  "gitVersion": "v1.21.0",
+  "gitCommit": "cb303e613a121a29364f75cc67d3d580833a7479",
+  "gitTreeState": "clean",
+  "buildDate": "2021-04-08T16:25:06Z",
+  "goVersion": "go1.16.1",
+  "compiler": "gc",
+  "platform": "linux/amd64"
+}
+```
+Next: [Bootstrapping the Kubernetes Worker Nodes](08-bootstrapping-kubernetes-workers.md)
