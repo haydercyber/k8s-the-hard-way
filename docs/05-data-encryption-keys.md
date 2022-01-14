@@ -42,7 +42,7 @@ Copy the `encryption-config.yaml` encryption config file to each controller inst
 
 ```
 for instance in kubecon01.k8s.com kubecon02.k8s.com; do
-     scp encryption-config.yaml ${instance}:~/
+     scp encryption-config.yaml root@${instance}:~/
 done
 ```
 Next: [Bootstrapping the etcd Cluster](06-bootstrapping-etcd.md)
