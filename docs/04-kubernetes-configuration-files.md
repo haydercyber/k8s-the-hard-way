@@ -213,14 +213,14 @@ Copy the appropriate `kubelet` and `kube-proxy` kubeconfig files to each worker 
 
 ```
 for instance in worknode01.k8s.com worknode02.k8s.com; do
-    scp ${instance}.kubeconfig kube-proxy.kubeconfig ${instance}:~/
+    scp ${instance}.kubeconfig kube-proxy.kubeconfig root@${instance}:~/
 done
 ```
 Copy the appropriate `kube-controller-manager` and `kube-scheduler` kubeconfig files to each controller instance:
 
 ```
 for instance in kubecon01.k8s.com kubecon02.k8s.com; do 
-    scp admin.kubeconfig kube-controller-manager.kubeconfig kube-scheduler.kubeconfig ${instance}:~/
+    scp admin.kubeconfig kube-controller-manager.kubeconfig kube-scheduler.kubeconfig root@${instance}:~/
 done
 ```
 Next: [Generating the Data Encryption Config and Key](05-data-encryption-keys.md)
